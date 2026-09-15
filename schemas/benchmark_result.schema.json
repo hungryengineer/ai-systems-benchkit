@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BenchKit Benchmark Result",
+  "type": "object",
+  "required": [
+    "benchmark",
+    "status",
+    "sample_count",
+    "environment",
+    "measurements"
+  ],
+  "properties": {
+    "benchmark": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "sample_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "environment": {
+      "type": "object"
+    },
+    "measurements": {
+      "type": "array"
+    },
+    "raw_samples": {
+      "type": "array",
+      "items": {
+        "type": "number"
+    }
+}
+  }
+}
