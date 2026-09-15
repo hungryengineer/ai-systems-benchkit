@@ -154,6 +154,20 @@ void write_result_json(
          << result.sample_count
          << ",\n";
 
+    file << "  \"raw_samples\": [";
+
+    for (std::size_t i = 0; i < result.raw_samples.size(); ++i)
+    {
+        if (i > 0)
+        {
+            file << ", ";
+        }
+
+        file << result.raw_samples[i];
+    }
+
+    file << "],\n";
+
     file << "  \"environment\": ";
     file << "{\n";
 
@@ -284,6 +298,55 @@ double percentage_change(
     return ((new_value - old_value) / old_value) * 100.0;
 }
 
+double percentile(
+    const std::vector<double>& values,
+    double percentile_value)
+{
+    if (values.empty())
+    {
+        throw std::runtime_error("Cannot calculate percentile of empty data");
+    }
+
+    std::vector<double> sorted = values;
+
+    std::sort(sorted.begin(), sorted.end());
+
+    double position =
+        (percentile_value / 100.0) * (sorted.size() - 1);
+
+    std::size_t lower =
+        static_cast<std::size_t>(std::floor(position));
+
+    std::size_t upper =
+        static_cast<std::size_t>(std::ceil(position));
+
+    if (lower == upper)
+    {
+        return sorted[lower];
+    }
+
+    double fraction = position - lower;
+
+    return sorted[lower] +
+           fraction * (sorted[upper] - sorted[lower]);
+}
+
+double tail_ratio(
+    const benchkit::BenchmarkResult& result)
+{
+    double median = get_measurement(result, "median");
+    double p95 = get_measurement(result, "p95");
+
+    if (median <= 0.0)
+    {
+        throw std::runtime_error(
+            "Cannot calculate tail ratio with non-positive median");
+    }
+
+    return p95 / median;
+}
+
+
 int main(int argc, char* argv[])
 {
 if (argc < 2)
@@ -354,6 +417,10 @@ if (command == "run")
     auto environment =
         benchkit::collect_environment();
 
+    double median = percentile(timings, 50.0);
+    double p95 = percentile(timings, 95.0);
+    double p99 = percentile(timings, 99.0);
+
     benchkit::BenchmarkResult result{
         .benchmark = "cpu_vector_add",
         .status = "pass",
@@ -361,10 +428,13 @@ if (command == "run")
         .sample_count = samples,
         .raw_samples = timings,
         .measurements = {
-            {"min", "ms", min_time},
-            {"mean", "ms", mean},
-            {"max", "ms", max_time},
-            {"stddev", "ms", standard_deviation}
+        {"min", "ms", min_time},
+        {"median", "ms", median},
+        {"mean", "ms", mean},
+        {"p95", "ms", p95},
+        {"p99", "ms", p99},
+        {"max", "ms", max_time},
+        {"stddev", "ms", standard_deviation}
         }
     };
 
@@ -414,7 +484,10 @@ else if (command == "compare")
 
         const std::vector<std::string> metrics = {
             "min",
+            "median",
             "mean",
+            "p95",
+            "p99",
             "max",
             "stddev"
         };
@@ -432,29 +505,44 @@ else if (command == "compare")
             << "--------------------------------------------\n";
 
         for (const auto& metric : metrics)
-        {
-            double value_a =
-                get_measurement(result_a, metric);
+    {
+        double value_a =
+            get_measurement(result_a, metric);
 
-            double value_b =
-                get_measurement(result_b, metric);
+        double value_b =
+            get_measurement(result_b, metric);
 
-            double change =
-                percentage_change(value_a, value_b);
+        double change =
+            percentage_change(value_a, value_b);
 
-            std::cout
-                << std::left
-                << std::setw(12)
-                << metric
-                << std::right
-                << std::setw(10)
-                << value_a
-                << std::setw(12)
-                << value_b
-                << std::setw(11)
-                << change
-                << "%\n";
-        }
+        std::cout
+            << std::left
+            << std::setw(12)
+            << metric
+            << std::right
+            << std::setw(10)
+            << value_a
+            << std::setw(12)
+            << value_b
+            << std::setw(11)
+            << change
+            << "%\n";
+    }
+
+        double tail_ratio_a = tail_ratio(result_a);
+        double tail_ratio_b = tail_ratio(result_b);
+
+        double tail_ratio_change =
+            percentage_change(tail_ratio_a, tail_ratio_b);
+
+        std::cout << "\nTail latency\n";
+        std::cout << "------------\n";
+
+        std::cout
+            << "P95 / median   "
+            << "Run A: " << tail_ratio_a << "x"
+            << "   Run B: " << tail_ratio_b << "x"
+            << "   Change: " << tail_ratio_change << "%\n";
     }
     catch (const std::exception& error)
     {
