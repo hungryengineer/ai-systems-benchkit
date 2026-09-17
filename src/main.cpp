@@ -2,6 +2,7 @@
 #include "benchkit/environment.hpp"
 #include "benchkit/json.hpp"
 #include "benchkit/result.hpp"
+#include "benchkit/cuda_benchmarks.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -450,6 +451,11 @@ if (command == "run")
     std::cout << "Raw result: "
               << output_path
               << "\n";
+
+    std::cout << "\nCUDA Benchmark\n";
+    std::cout << "--------------\n";
+
+    benchkit::run_cuda_vector_add();
 }
 else if (command == "compare")
 {

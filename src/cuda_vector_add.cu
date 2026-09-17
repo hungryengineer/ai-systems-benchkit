@@ -1,8 +1,8 @@
 #include "benchkit/cuda_benchmarks.hpp"
 
 #include <cuda_runtime.h>
-
 #include <iostream>
+#include <vector>
 
 namespace benchkit {
 
@@ -20,10 +20,11 @@ __global__ void vector_add_kernel(
     }
 }
 
-void run_cuda_vector_add()
+std::vector<double> run_cuda_vector_add()
 {
     constexpr int N = 1 << 20;
     constexpr size_t bytes = N * sizeof(float);
+    
 
     float* h_a = new float[N];
     float* h_b = new float[N];
@@ -43,18 +44,72 @@ void run_cuda_vector_add()
     cudaMalloc(&d_b, bytes);
     cudaMalloc(&d_c, bytes);
 
-    cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(
+        d_a,
+        h_a,
+        bytes,
+        cudaMemcpyHostToDevice
+    );
+
+    cudaMemcpy(
+        d_b,
+        h_b,
+        bytes,
+        cudaMemcpyHostToDevice
+    );
 
     constexpr int threads = 256;
     const int blocks = (N + threads - 1) / threads;
 
+    // Warm-up
     vector_add_kernel<<<blocks, threads>>>(
         d_a,
         d_b,
         d_c,
         N
     );
+
+    cudaDeviceSynchronize();
+
+    // CUDA timing events
+    cudaEvent_t start;
+    cudaEvent_t stop;
+
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    constexpr int iterations = 20;
+    std::vector<double> timings;
+    timings.reserve(iterations);
+
+    for (int iteration = 0; iteration < iterations; ++iteration)
+    {
+        cudaEventRecord(start);
+
+        vector_add_kernel<<<blocks, threads>>>(
+            d_a,
+            d_b,
+            d_c,
+            N
+        );
+
+        cudaEventRecord(stop);
+
+        cudaEventSynchronize(stop);
+
+        float milliseconds = 0.0f;
+
+        cudaEventElapsedTime(
+            &milliseconds,
+            start,
+            stop
+        );
+
+        // double microseconds = milliseconds * 1000.0;
+
+        timings.push_back(static_cast<double>(milliseconds));
+        return timings;
+    }
 
     cudaMemcpy(
         h_c,
@@ -74,9 +129,13 @@ void run_cuda_vector_add()
         }
     }
 
-    std::cout << "CUDA Vector Add: "
-              << (correct ? "PASS" : "FAIL")
-              << '\n';
+    std::cout
+        << "CUDA Vector Add: "
+        << (correct ? "PASS" : "FAIL")
+        << '\n';
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
 
     cudaFree(d_a);
     cudaFree(d_b);

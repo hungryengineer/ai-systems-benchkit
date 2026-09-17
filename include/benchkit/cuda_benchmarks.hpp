@@ -2,6 +2,5 @@
 
 namespace benchkit {
 
-void run_cuda_vector_add();
-
+std::vector<double> run_cuda_vector_add();
 }
