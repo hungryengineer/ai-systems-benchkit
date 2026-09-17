@@ -3,12 +3,16 @@ cmake_minimum_required(VERSION 3.20)
 project(ai_systems_benchkit
     VERSION 0.1.0
     DESCRIPTION "Reproducible C++/CUDA benchmarking framework for AI infrastructure"
-    LANGUAGES CXX
+    LANGUAGES CXX CUDA
 )
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_EXTENSIONS OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
@@ -20,6 +24,7 @@ add_executable(
     src/environment.cpp
     src/json.cpp
     src/cpu_benchmarks.cpp
+    src/cuda_vector_add.cu
 )
 
 target_include_directories(benchkit

@@ -1,6 +1,8 @@
 # Build output
 build/
 out/
+cmake-build-*/
+CMakeUserPresets.json
 
 # CMake generated
 CMakeCache.txt
@@ -15,12 +17,19 @@ Makefile
 *.so
 *.exe
 
+# CUDA artifacts
+*.cubin
+*.fatbin
+*.ptx
+
 # Benchmark results
 results/raw/*.json
+results/*.json
 
 # IDE / editor
 .vscode/
 .idea/
+.vim/
 *.swp
 *.swo
 *~
@@ -28,3 +37,6 @@ results/raw/*.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Misc
+*.log
