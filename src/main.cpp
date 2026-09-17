@@ -3,11 +3,9 @@
 #include "benchkit/json.hpp"
 #include "benchkit/result.hpp"
 #include "benchkit/cuda_benchmarks.hpp"
+#include "benchkit/statistics.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <iostream>
-#include <numeric>
 #include <vector>
 #include <fstream>
 #include <stdexcept>
@@ -299,39 +297,6 @@ double percentage_change(
     return ((new_value - old_value) / old_value) * 100.0;
 }
 
-double percentile(
-    const std::vector<double>& values,
-    double percentile_value)
-{
-    if (values.empty())
-    {
-        throw std::runtime_error("Cannot calculate percentile of empty data");
-    }
-
-    std::vector<double> sorted = values;
-
-    std::sort(sorted.begin(), sorted.end());
-
-    double position =
-        (percentile_value / 100.0) * (sorted.size() - 1);
-
-    std::size_t lower =
-        static_cast<std::size_t>(std::floor(position));
-
-    std::size_t upper =
-        static_cast<std::size_t>(std::ceil(position));
-
-    if (lower == upper)
-    {
-        return sorted[lower];
-    }
-
-    double fraction = position - lower;
-
-    return sorted[lower] +
-           fraction * (sorted[upper] - sorted[lower]);
-}
-
 double tail_ratio(
     const benchkit::BenchmarkResult& result)
 {
@@ -383,44 +348,11 @@ if (command == "run")
         timings.push_back(benchmark.elapsed_ms);
     }
 
-    double min_time =
-        *std::min_element(timings.begin(), timings.end());
-
-    double max_time =
-        *std::max_element(timings.begin(), timings.end());
-
-    double sum =
-        std::accumulate(
-            timings.begin(),
-            timings.end(),
-            0.0);
-
-    double mean =
-        sum / timings.size();
-
-    double squared_diff_sum = 0.0;
-
-    for (double value : timings)
-    {
-        double difference = value - mean;
-
-        squared_diff_sum +=
-            difference * difference;
-    }
-
-    double variance =
-        squared_diff_sum /
-        (timings.size() - 1);
-
-    double standard_deviation =
-        std::sqrt(variance);
-
     auto environment =
         benchkit::collect_environment();
 
-    double median = percentile(timings, 50.0);
-    double p95 = percentile(timings, 95.0);
-    double p99 = percentile(timings, 99.0);
+    std::vector<benchkit::Measurement> measurements =
+        benchkit::calculate_statistics(timings, "ms");
 
     benchkit::BenchmarkResult result{
         .benchmark = "cpu_vector_add",
@@ -428,15 +360,7 @@ if (command == "run")
         .environment = environment,
         .sample_count = samples,
         .raw_samples = timings,
-        .measurements = {
-        {"min", "ms", min_time},
-        {"median", "ms", median},
-        {"mean", "ms", mean},
-        {"p95", "ms", p95},
-        {"p99", "ms", p99},
-        {"max", "ms", max_time},
-        {"stddev", "ms", standard_deviation}
-        }
+        .measurements = measurements
     };
 
     print_result_json(result);
@@ -455,7 +379,21 @@ if (command == "run")
     std::cout << "\nCUDA Benchmark\n";
     std::cout << "--------------\n";
 
-    benchkit::run_cuda_vector_add();
+    std::vector<double> gpu_timings =
+        benchkit::run_cuda_vector_add();
+
+    std::vector<benchkit::Measurement> gpu_stats =
+        benchkit::calculate_statistics(gpu_timings, "ms");
+
+    std::cout << std::fixed
+              << std::setprecision(4)
+              << "\nGPU statistics\n";
+
+    for (const auto& stat : gpu_stats)
+    {
+        std::cout << "GPU " << stat.name
+                  << ": " << stat.value << " ms\n";
+    }
 }
 else if (command == "compare")
 {

@@ -25,6 +25,7 @@ add_executable(
     src/json.cpp
     src/cpu_benchmarks.cpp
     src/cuda_vector_add.cu
+    src/statistics.cpp
 )
 
 target_include_directories(benchkit

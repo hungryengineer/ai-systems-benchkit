@@ -108,7 +108,6 @@ std::vector<double> run_cuda_vector_add()
         // double microseconds = milliseconds * 1000.0;
 
         timings.push_back(static_cast<double>(milliseconds));
-        return timings;
     }
 
     cudaMemcpy(
@@ -144,6 +143,8 @@ std::vector<double> run_cuda_vector_add()
     delete[] h_a;
     delete[] h_b;
     delete[] h_c;
+
+    return timings;
 }
 
 } // namespace benchkit
