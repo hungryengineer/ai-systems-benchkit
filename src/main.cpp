@@ -379,19 +379,61 @@ if (command == "run")
     std::cout << "\nCUDA Benchmark\n";
     std::cout << "--------------\n";
 
-    std::vector<double> gpu_timings =
+    benchkit::CudaBenchmarkResult gpu_result =
         benchkit::run_cuda_vector_add();
 
     std::vector<benchkit::Measurement> gpu_stats =
-        benchkit::calculate_statistics(gpu_timings, "ms");
+        benchkit::calculate_statistics(
+            gpu_result.kernel_timings_ms,
+            "ms");
+
+    std::vector<benchkit::Measurement> h2d_stats =
+        benchkit::calculate_statistics(
+            gpu_result.h2d_timings_ms,
+            "ms");
+
+    std::vector<benchkit::Measurement> d2h_stats =
+        benchkit::calculate_statistics(
+            gpu_result.d2h_timings_ms,
+            "ms");
+
+    std::vector<benchkit::Measurement> e2e_stats =
+        benchkit::calculate_statistics(
+            gpu_result.e2e_timings_ms,
+            "ms");
 
     std::cout << std::fixed
-              << std::setprecision(4)
-              << "\nGPU statistics\n";
+              << std::setprecision(4);
+
+    std::cout << "\nGPU kernel statistics\n";
 
     for (const auto& stat : gpu_stats)
     {
         std::cout << "GPU " << stat.name
+                  << ": " << stat.value << " ms\n";
+    }
+
+    std::cout << "\nH2D transfer statistics\n";
+
+    for (const auto& stat : h2d_stats)
+    {
+        std::cout << "H2D " << stat.name
+                  << ": " << stat.value << " ms\n";
+    }
+
+    std::cout << "\nD2H transfer statistics\n";
+
+    for (const auto& stat : d2h_stats)
+    {
+        std::cout << "D2H " << stat.name
+                  << ": " << stat.value << " ms\n";
+    }
+
+    std::cout << "\nE2E latency statistics\n";
+
+    for (const auto& stat : e2e_stats)
+    {
+        std::cout << "E2E " << stat.name
                   << ": " << stat.value << " ms\n";
     }
 }
