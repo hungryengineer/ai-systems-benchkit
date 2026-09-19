@@ -1,4 +1,5 @@
 #include "benchkit/cuda_benchmarks.hpp"
+#include "benchkit/statistics.hpp"
 
 #include <cuda_runtime.h>
 #include <iostream>
@@ -20,7 +21,7 @@ __global__ void vector_add_kernel(
     }
 }
 
-CudaBenchmarkResult run_cuda_vector_add()
+BenchmarkResult run_cuda_vector_add(const EnvironmentInfo& environment)
 {
     constexpr int N = 1 << 20;
     constexpr size_t bytes = N * sizeof(float);
@@ -291,12 +292,39 @@ CudaBenchmarkResult run_cuda_vector_add()
     delete[] h_b;
     delete[] h_c;
 
-    return CudaBenchmarkResult{
-        timings,
-        h2d_timings,
-        d2h_timings,
-        e2e_timings
+    // Assemble the final benchmark result from the four timing vectors.
+    // Each vector is reduced to its statistics via the reusable
+    // calculate_statistics() module, then namespaced by phase so the
+    // measurements are unique (e.g. "kernel_min", "h2d_mean").
+    BenchmarkResult result;
+
+    result.benchmark = "cuda_vector_add";
+    result.status = correct ? "pass" : "fail";
+    result.environment = environment;
+    result.sample_count = static_cast<int>(timings.size());
+    result.raw_samples = timings;
+
+    auto append_stats = [&result](
+        const std::vector<double>& samples,
+        const std::string& prefix)
+    {
+        std::vector<Measurement> stats =
+            calculate_statistics(samples, "ms");
+
+        for (Measurement& stat : stats)
+        {
+            stat.name = prefix + "_" + stat.name;
+
+            result.measurements.push_back(std::move(stat));
+        }
     };
+
+    append_stats(timings, "kernel");
+    append_stats(h2d_timings, "h2d");
+    append_stats(d2h_timings, "d2h");
+    append_stats(e2e_timings, "e2e");
+
+    return result;
 }
 
 } // namespace benchkit

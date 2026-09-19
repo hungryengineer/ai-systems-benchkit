@@ -3,6 +3,7 @@
 #include "benchkit/json.hpp"
 #include "benchkit/result.hpp"
 #include "benchkit/cuda_benchmarks.hpp"
+#include "benchkit/cuda_matmul.hpp"
 #include "benchkit/statistics.hpp"
 
 #include <iostream>
@@ -13,6 +14,7 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include "benchkit/cuda_matmul.hpp"
 
 namespace {
 
@@ -284,6 +286,22 @@ double get_measurement(
         "Measurement not found: " + name);
 }
 
+double get_metric(
+    const std::vector<benchkit::Measurement>& measurements,
+    const std::string& name)
+{
+    for (const auto& measurement : measurements)
+    {
+        if (measurement.name == name)
+        {
+            return measurement.value;
+        }
+    }
+
+    throw std::runtime_error(
+        "Metric not found: " + name);
+}
+
 double percentage_change(
     double old_value,
     double new_value)
@@ -379,63 +397,71 @@ if (command == "run")
     std::cout << "\nCUDA Benchmark\n";
     std::cout << "--------------\n";
 
-    benchkit::CudaBenchmarkResult gpu_result =
-        benchkit::run_cuda_vector_add();
+    benchkit::BenchmarkResult cuda_result =
+        benchkit::run_cuda_vector_add(environment);
 
-    std::vector<benchkit::Measurement> gpu_stats =
-        benchkit::calculate_statistics(
-            gpu_result.kernel_timings_ms,
-            "ms");
+    print_result_json(cuda_result);
 
-    std::vector<benchkit::Measurement> h2d_stats =
-        benchkit::calculate_statistics(
-            gpu_result.h2d_timings_ms,
-            "ms");
+    std::string cuda_output_path =
+        "results/raw/cuda_vector_add_" +
+        make_timestamp() +
+        ".json";
 
-    std::vector<benchkit::Measurement> d2h_stats =
-        benchkit::calculate_statistics(
-            gpu_result.d2h_timings_ms,
-            "ms");
+    write_result_json(cuda_result, cuda_output_path);
 
-    std::vector<benchkit::Measurement> e2e_stats =
-        benchkit::calculate_statistics(
-            gpu_result.e2e_timings_ms,
-            "ms");
+    std::cout << "CUDA result: "
+              << cuda_output_path
+              << "\n";
 
-    std::cout << std::fixed
-              << std::setprecision(4);
+    std::cout << "\nCUDA MatMul Benchmark\n";
+    std::cout << "---------------------\n";
 
-    std::cout << "\nGPU kernel statistics\n";
+    auto matmul_timings =
+        benchkit::run_cuda_matmul();
 
-    for (const auto& stat : gpu_stats)
-    {
-        std::cout << "GPU " << stat.name
-                  << ": " << stat.value << " ms\n";
-    }
+    const auto matmul_stats =
+        benchkit::calculate_statistics(matmul_timings, "ms");
 
-    std::cout << "\nH2D transfer statistics\n";
+    std::cout << "\nMatMul kernel statistics\n";
 
-    for (const auto& stat : h2d_stats)
-    {
-        std::cout << "H2D " << stat.name
-                  << ": " << stat.value << " ms\n";
-    }
+    std::cout << "min: "
+              << get_metric(matmul_stats, "min")
+              << " ms\n";
 
-    std::cout << "\nD2H transfer statistics\n";
+    std::cout << "median: "
+              << get_metric(matmul_stats, "median")
+              << " ms\n";
 
-    for (const auto& stat : d2h_stats)
-    {
-        std::cout << "D2H " << stat.name
-                  << ": " << stat.value << " ms\n";
-    }
+    std::cout << "mean: "
+              << get_metric(matmul_stats, "mean")
+              << " ms\n";
 
-    std::cout << "\nE2E latency statistics\n";
+    std::cout << "p95: "
+              << get_metric(matmul_stats, "p95")
+              << " ms\n";
 
-    for (const auto& stat : e2e_stats)
-    {
-        std::cout << "E2E " << stat.name
-                  << ": " << stat.value << " ms\n";
-    }
+    std::cout << "p99: "
+              << get_metric(matmul_stats, "p99")
+              << " ms\n";
+
+    constexpr int M = 1024;
+    constexpr int K = 1024;
+    constexpr int N = 1024;
+
+    const double median_ms =
+        get_metric(matmul_stats, "median");
+
+    const double gflops =
+        (2.0 * M * K * N) /
+        (median_ms * 1e6);
+
+    std::cout << "Median: "
+              << median_ms
+              << " ms\n";
+
+    std::cout << "GFLOPS: "
+              << gflops
+              << '\n';
 }
 else if (command == "compare")
 {
