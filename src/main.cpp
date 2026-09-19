@@ -416,52 +416,49 @@ if (command == "run")
     std::cout << "\nCUDA MatMul Benchmark\n";
     std::cout << "---------------------\n";
 
-    auto matmul_timings =
-        benchkit::run_cuda_matmul();
-
-    const auto matmul_stats =
-        benchkit::calculate_statistics(matmul_timings, "ms");
-
-    std::cout << "\nMatMul kernel statistics\n";
-
-    std::cout << "min: "
-              << get_metric(matmul_stats, "min")
-              << " ms\n";
-
-    std::cout << "median: "
-              << get_metric(matmul_stats, "median")
-              << " ms\n";
-
-    std::cout << "mean: "
-              << get_metric(matmul_stats, "mean")
-              << " ms\n";
-
-    std::cout << "p95: "
-              << get_metric(matmul_stats, "p95")
-              << " ms\n";
-
-    std::cout << "p99: "
-              << get_metric(matmul_stats, "p99")
-              << " ms\n";
-
     constexpr int M = 1024;
     constexpr int K = 1024;
     constexpr int N = 1024;
 
-    const double median_ms =
-        get_metric(matmul_stats, "median");
+    const auto naive_stats =
+        benchkit::calculate_statistics(
+            benchkit::run_cuda_matmul(),
+            "ms");
 
-    const double gflops =
-        (2.0 * M * K * N) /
-        (median_ms * 1e6);
+    const auto tiled_stats =
+        benchkit::calculate_statistics(
+            benchkit::run_cuda_matmul_tiled(),
+            "ms");
 
-    std::cout << "Median: "
-              << median_ms
-              << " ms\n";
+    const auto cublas_stats =
+        benchkit::calculate_statistics(
+            benchkit::run_cuda_matmul_cublas(),
+            "ms");
 
-    std::cout << "GFLOPS: "
-              << gflops
-              << '\n';
+    auto print_stats =
+        [M, K, N](const char* label,
+                  const std::vector<benchkit::Measurement>& stats)
+    {
+        for (const char* metric :
+             {"min", "median", "mean", "p95", "p99"})
+        {
+            std::cout << label << " " << metric << ": "
+                      << get_metric(stats, metric)
+                      << " ms\n";
+        }
+
+        const double gflops =
+            (2.0 * M * K * N) /
+            (get_metric(stats, "median") * 1e6);
+
+        std::cout << label << " GFLOPS: "
+                  << gflops
+                  << '\n';
+    };
+
+    print_stats("Naive", naive_stats);
+    print_stats("Tiled", tiled_stats);
+    print_stats("cuBLAS", cublas_stats);
 }
 else if (command == "compare")
 {

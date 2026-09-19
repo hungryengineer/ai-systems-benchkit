@@ -18,6 +18,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+find_package(CUDAToolkit REQUIRED)
+
 add_executable(
     benchkit
     src/main.cpp
@@ -39,6 +41,11 @@ target_compile_options(benchkit
         -Wall
         -Wextra
         -Wpedantic
+)
+
+target_link_libraries(benchkit
+    PRIVATE
+        CUDA::cublas
 )
 
 enable_testing()
@@ -64,3 +71,5 @@ add_test(
     NAME result_test
     COMMAND benchkit_result_test
 )
+
+target_link_libraries(benchkit PRIVATE cublas)
