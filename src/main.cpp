@@ -331,19 +331,50 @@ double tail_ratio(
 }
 
 
+void print_usage()
+{
+    std::cout << "Usage: benchkit <command> [arguments]\n";
+    std::cout << "\nCommands:\n";
+    std::cout << "  run [all|vector-add|rmsnorm|softmax|matmul]\n";
+    std::cout << "    Run benchmarks. Defaults to 'all'.\n";
+    std::cout << "  compare\n";
+    std::cout << "    Compare benchmark results.\n";
+    std::cout << "  --help, -h\n";
+    std::cout << "    Show this help.\n";
+}
+
 int main(int argc, char* argv[])
 {
 if (argc < 2)
 {
-    std::cerr << "Usage: benchkit <command> [arguments]\n";
-    std::cerr << "Commands: run, compare\n";
+    print_usage();
     return 1;
 }
 
 std::string command = argv[1];
 
+if (command == "--help" || command == "-h")
+{
+    print_usage();
+    return 0;
+}
+
 if (command == "run")
 {
+    std::string target =
+        (argc >= 3) ? std::string(argv[2]) : "all";
+
+    auto want =
+        [target](const std::string& name)
+    {
+        return target == "all" || target == name;
+    };
+
+    auto environment =
+        benchkit::collect_environment();
+
+    if (want("vector-add"))
+    {
     constexpr int samples = 20;
     constexpr std::size_t elements = 1'000'000;
 
@@ -365,9 +396,6 @@ if (command == "run")
 
         timings.push_back(benchmark.elapsed_ms);
     }
-
-    auto environment =
-        benchkit::collect_environment();
 
     std::vector<benchkit::Measurement> measurements =
         benchkit::calculate_statistics(timings, "ms");
@@ -412,7 +440,10 @@ if (command == "run")
     std::cout << "CUDA result: "
               << cuda_output_path
               << "\n";
+    }
 
+    if (want("rmsnorm"))
+    {
     std::cout << "\nCUDA RMSNorm Benchmark\n";
     std::cout << "----------------------\n";
 
@@ -434,7 +465,35 @@ if (command == "run")
     std::cout << "RMSNorm result: "
               << rmsnorm_output_path
               << "\n";
+    }
 
+    if (want("softmax"))
+    {
+    std::cout << "\nCUDA Softmax Benchmark\n";
+    std::cout << "----------------------\n";
+
+    benchkit::BenchmarkResult softmax_result =
+        benchkit::run_cuda_softmax(environment);
+
+    print_result_json(softmax_result);
+
+    std::string softmax_output_path =
+        "results/raw/cuda_softmax_" +
+        make_timestamp() +
+        ".json";
+
+    write_result_json(
+        softmax_result,
+        softmax_output_path
+    );
+
+    std::cout << "Softmax result: "
+              << softmax_output_path
+              << "\n";
+    }
+
+    if (want("matmul"))
+    {
     std::cout << "\nCUDA MatMul Benchmark\n";
     std::cout << "---------------------\n";
 
@@ -481,6 +540,21 @@ if (command == "run")
     print_stats("Naive", naive_stats);
     print_stats("Tiled", tiled_stats);
     print_stats("cuBLAS", cublas_stats);
+    }
+
+    if (target != "all"
+        && target != "vector-add"
+        && target != "rmsnorm"
+        && target != "softmax"
+        && target != "matmul")
+    {
+        std::cerr << "Unknown benchmark: \""
+                  << target
+                  << "\"\n";
+        std::cerr << "Usage: benchkit run "
+                     "[all|vector-add|rmsnorm|softmax|matmul]\n";
+        return 1;
+    }
 }
 else if (command == "compare")
 {
