@@ -413,6 +413,28 @@ if (command == "run")
               << cuda_output_path
               << "\n";
 
+    std::cout << "\nCUDA RMSNorm Benchmark\n";
+    std::cout << "----------------------\n";
+
+    benchkit::BenchmarkResult rmsnorm_result =
+        benchkit::run_cuda_rmsnorm(environment);
+
+    print_result_json(rmsnorm_result);
+
+    std::string rmsnorm_output_path =
+        "results/raw/cuda_rmsnorm_" +
+        make_timestamp() +
+        ".json";
+
+    write_result_json(
+        rmsnorm_result,
+        rmsnorm_output_path
+    );
+
+    std::cout << "RMSNorm result: "
+              << rmsnorm_output_path
+              << "\n";
+
     std::cout << "\nCUDA MatMul Benchmark\n";
     std::cout << "---------------------\n";
 

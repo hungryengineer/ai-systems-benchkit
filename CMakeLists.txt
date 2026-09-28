@@ -27,6 +27,7 @@ add_executable(
     src/json.cpp
     src/cpu_benchmarks.cpp
 src/cuda_vector_add.cu
+    src/cuda_rmsnorm.cu
     src/cuda_matmul.cu
     src/statistics.cpp
 )
