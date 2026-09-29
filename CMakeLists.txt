@@ -31,6 +31,7 @@ add_executable(
     src/cuda_matmul.cu
     src/statistics.cpp
     src/cuda_softmax.cu
+    src/cuda_softmax_vectorized.cu
 )
 
 target_include_directories(benchkit
@@ -72,6 +73,28 @@ target_compile_options(benchkit_result_test
 add_test(
     NAME result_test
     COMMAND benchkit_result_test
+)
+
+add_executable(benchkit_softmax_vectorized_test
+    tests/test_softmax_vectorized.cu
+    src/cuda_softmax_vectorized.cu
+)
+
+target_include_directories(benchkit_softmax_vectorized_test
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+target_compile_options(benchkit_softmax_vectorized_test
+    PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+)
+
+add_test(
+    NAME softmax_vectorized_test
+    COMMAND benchkit_softmax_vectorized_test
 )
 
 target_link_libraries(benchkit PRIVATE cublas)

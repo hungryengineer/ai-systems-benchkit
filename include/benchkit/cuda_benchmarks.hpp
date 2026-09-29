@@ -17,4 +17,8 @@ BenchmarkResult run_cuda_softmax(
     const EnvironmentInfo& environment
 );
 
+BenchmarkResult run_cuda_softmax_vectorized(
+    const EnvironmentInfo& environment
+);
+
 }

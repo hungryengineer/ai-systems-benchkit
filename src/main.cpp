@@ -335,7 +335,7 @@ void print_usage()
 {
     std::cout << "Usage: benchkit <command> [arguments]\n";
     std::cout << "\nCommands:\n";
-    std::cout << "  run [all|vector-add|rmsnorm|softmax|matmul]\n";
+    std::cout << "  run [all|vector-add|rmsnorm|softmax|softmax-vectorized|matmul]\n";
     std::cout << "    Run benchmarks. Defaults to 'all'.\n";
     std::cout << "  compare\n";
     std::cout << "    Compare benchmark results.\n";
@@ -492,6 +492,31 @@ if (command == "run")
               << "\n";
     }
 
+    if (want("softmax-vectorized"))
+    {
+    std::cout << "\nCUDA Softmax Vectorized Benchmark\n";
+    std::cout << "----------------------------------\n";
+
+    benchkit::BenchmarkResult vec_result =
+        benchkit::run_cuda_softmax_vectorized(environment);
+
+    print_result_json(vec_result);
+
+    std::string vec_output_path =
+        "results/raw/cuda_softmax_vectorized_" +
+        make_timestamp() +
+        ".json";
+
+    write_result_json(
+        vec_result,
+        vec_output_path
+    );
+
+    std::cout << "Softmax vectorized result: "
+              << vec_output_path
+              << "\n";
+    }
+
     if (want("matmul"))
     {
     std::cout << "\nCUDA MatMul Benchmark\n";
@@ -546,13 +571,14 @@ if (command == "run")
         && target != "vector-add"
         && target != "rmsnorm"
         && target != "softmax"
+        && target != "softmax-vectorized"
         && target != "matmul")
     {
         std::cerr << "Unknown benchmark: \""
                   << target
                   << "\"\n";
         std::cerr << "Usage: benchkit run "
-                     "[all|vector-add|rmsnorm|softmax|matmul]\n";
+                     "[all|vector-add|rmsnorm|softmax|softmax-vectorized|matmul]\n";
         return 1;
     }
 }
