@@ -13,6 +13,8 @@ The project currently ships four benchmarks:
 | `cuda_rmsnorm`     | GPU RMSNorm over 512 x 4096 rows                              |
 | `cuda_softmax`     | GPU softmax baseline: one block per row, scalar accesses     |
 | `cuda_softmax_vectorized` | Same softmax with `float4` access and warp-shuffle reductions |
+| `cuda_softmax_rmsnorm_fused` | Day-4 fusion: softmax + RMSNorm in one kernel (`softmax_rmsnorm_kernel`) |
+| `cuda_softmax_rmsnorm_unfused` | Same result via 2 launches: V2 softmax then scalar RMSNorm |
 | `cuda_matmul`      | 1024x1024x1024 SGEMM: naive, shared-memory tiled, and cuBLAS |
 
 ---
@@ -286,19 +288,79 @@ shared-memory tree reduction  →  warp_shuffle_down + block reduce
   traffic. This is intentionally kept as a documented optimization that did
   not clearly improve the result.
 
-### Remaining (Week 2)
+### V4 — register-cached fused exp (kept, also no clear win)
 
-Day 4 is the remaining Week-2 requirement: **fusion**. One fused operation
-(softmax + RMSNorm, or RMSNorm + quantize) plus a comparison of:
+The V4 change makes the intermediate softmax values never leave the SM: the
+exp pass writes its results into a per-thread `float4 cached[4]` register
+array, and normalization reads straight back from registers. No global
+write/read-back of the exp values at all.
 
-- launch count,
-- memory traffic,
-- latency,
-- numerical error.
+- **Change:** only the middle pass of the V3 kernel — discard the `output4`
+  store + immediate reload before the normalize pass; every other aspect is
+  identical.
+- **Profiler result (Nsight Compute on RTX 5050):** DRAM throughput went
+  ~36% -> ~39%, achieved occupancy ~90% -> ~91.5%, but duration went up
+  slightly (~67 us -> ~73-76 us) and Compute (SM) throughput rose to ~70%.
+  ncu's bottleneck report now says *compute is more heavily utilized than
+  memory*. **Second documented negative result.** The eliminated read-back was
+  already served from L1/L2 for the V3 code path, so DRAM traffic barely
+  moved; the kernel is bounded by `expf` SFU work plus the shuffle reductions,
+  not by DRAM bandwidth.
+- **New, actionable finding exposed by the V4 profile: the partial last wave.**
+  With `grid = 512` blocks and a 6-blocks-per-SM occupancy limit (registers are
+  the limiter now, 39 regs/thread), only `6 * 20 SMs = 120` blocks are resident,
+  so the launch runs **4.27 waves/SM** — four full waves plus a 32-block tail
+  that leaves most SMs idle. ncu's `Wave Occupancy` estimate attributes up to
+  ~20% of runtime to that tail. Grid sizing turned out to be a bigger lever
+  than either optimization above.
 
-That is the direct continuation of the V1/V2/V3 loop — merge passes that touch
-the same data, measure whether the reduced traffic actually shows up, and keep
-or reject on the numbers.
+### Day 4: Fusion (kept — first clear win)
+
+The remaining Week-2 requirement was **fusion**: merge two ops that touch the
+same data into one kernel and measure whether the reduced work actually shows
+up. Chosen pair: **softmax followed by RMSNorm** — a realistic transformer
+pre-norm + attention-weight ordering.
+
+`softmax_rmsnorm_kernel` in `src/cuda_softmax_rmsnorm.cu` computes
+`softmax(x)` then `RMSNorm(softmax, gamma) · gamma` in a single pass per row:
+
+- reuse the V4 register-caching pattern: `exp(x - max)` values live in
+  `float4 cached[4]` between the reduction and the normalize pass,
+- the RMSNorm sum-of-squares is accumulated in the **same** exp pass
+  (`sum2 = sum(e^2)`; `rms = sqrt(sum2 / (hidden * sum^2) + eps)`), so no
+  second read of the softmax output is needed,
+- normalization and `gamma` scaling are applied straight from registers.
+
+The unfused baseline (`run_cuda_softmax_rmsnorm_unfused`) calls the existing
+`softmax_kernel_vectorized` then the scalar `rmsnorm_kernel` — two library
+kernels, one full write + two full reads of the 8 MiB intermediate.
+
+Comparison (ncu, clock-locked, RTX 5050; benchkit wall-clock in parens):
+
+| Dimension        | Unfused (2 kernels)          | Fused (`softmax_rmsnorm_kernel`) |
+| ---------------- | ---------------------------- | -------------------------------- |
+| Launch count     | 2                            | **1**                            |
+| Latency (ncu)    | 75.2 + 115.0 = **190.2 us**  | **63.8 us** (3.0x faster)        |
+| Latency (benchkit median) | **0.080 ms**       | **0.024 ms** (3.3x faster)       |
+| DRAM throughput  | 38.9% / 25.4%                | **45.9%**                        |
+| Memory throughput | 110.5 / 72.7 GB/s           | **131.9 GB/s**                   |
+| Global traffic (logical) | ~48 MiB (2x reads of x + tmp write + 2x reads of tmp + write) | **~24 MiB** (2x reads of x + write, gamma cached) |
+| Numerical error (vs CPU) | <= 2.4e-07             | <= 2.4e-07 (identical)           |
+
+**Verdict: keep.** This is the first change in the whole softmax arc that the
+profiler confirms as a clear win — and the reason is instructive: it is *not*
+just the halved DRAM traffic (x was already L2-resident in the smaller
+single-kernel experiments, but here the 8 MiB `tmp` buffer is a *full extra
+round-trip through global memory*). Fusion also replaced the scalar
+`rmsnorm_kernel`, which was latency-bound (24 regs, 128 threads, 115 us) with
+vectorized, 256-thread work — the fused kernel at 63.8 us is faster than
+either unfused kernel alone. The correctness gate still passes with the same
+max error, so the reordering cost nothing numerically.
+
+The takeaway for the experiment loop: register shuffles and reduction swaps
+(V3/V4) moved nothing because the bottleneck was elsewhere; **fusion removed
+an entire global-memory round-trip and an entire scalar pass** — two real
+costs that micro-optimizations never touched.
 
 ---
 
@@ -376,13 +438,15 @@ src/
   cuda_vector_add.cu
   cuda_rmsnorm.cu
   cuda_softmax.cu           Baseline softmax kernel (V1)
-  cuda_softmax_vectorized.cu  float4 + warp-shuffle variant (V2/V3)
+  cuda_softmax_vectorized.cu  float4 + warp-shuffle variant (V2/V3, V4 register cache)
+  cuda_softmax_rmsnorm.cu   Day-4 fused softmax+RMSNorm and unfused baseline
   cuda_matmul.cu
   environment.cpp           System/GPU info collection
   json.cpp                  Result loading
   statistics.cpp            Reusable statistics module
 tests/test_result.cpp       Smoke test
 tests/test_softmax_vectorized.cu  Correctness gate for the V2/V3 kernel
+tests/test_softmax_rmsnorm.cu     Correctness gate for the Day-4 fused / unfused paths
 docs/nsight-profiling/      Nsight Systems / Compute integration docs
 schemas/                    JSON schema for result files
 results/raw/                Generated results (git-ignored)

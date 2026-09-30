@@ -139,30 +139,47 @@ __global__ void softmax_kernel_vectorized(
     float max_val = block_reduce_max(local_max);
 
     // ------------------------------------------------------------
-    // 2. Vectorized exp + store + sum
+    // 2. Fused exp + sum, results cached in registers (V4)
+    //    exp -> registers -> reduce -> normalize from registers.
+    //    No global write/read-back of the exp values.
     // ------------------------------------------------------------
+    float4 cached[4];
     float local_sum = 0.0f;
 
-    for (int v = tid; v < vectors_per_row; v += blockDim.x) {
+    for (int k = 0; k < 4; ++k) {
+        int v = tid + k * blockDim.x;
+
+        if (v >= vectors_per_row) {
+            break;
+        }
+
         float4 x = input4[v];
 
-        float e0 = expf(x.x - max_val);
-        float e1 = expf(x.y - max_val);
-        float e2 = expf(x.z - max_val);
-        float e3 = expf(x.w - max_val);
+        float4 e = make_float4(
+            expf(x.x - max_val),
+            expf(x.y - max_val),
+            expf(x.z - max_val),
+            expf(x.w - max_val)
+        );
 
-        output4[v] = make_float4(e0, e1, e2, e3);
+        cached[k] = e;
 
-        local_sum += e0 + e1 + e2 + e3;
+        local_sum += e.x + e.y + e.z + e.w;
     }
 
     float sum = block_reduce_sum(local_sum);
 
     // ------------------------------------------------------------
-    // 4. Vectorized final normalization (read-back from output)
+    // 3. Normalize straight from registers
     // ------------------------------------------------------------
-    for (int v = tid; v < vectors_per_row; v += blockDim.x) {
-        float4 y = output4[v];
+    for (int k = 0; k < 4; ++k) {
+        int v = tid + k * blockDim.x;
+
+        if (v >= vectors_per_row) {
+            break;
+        }
+
+        float4 y = cached[k];
 
         y.x /= sum;
         y.y /= sum;

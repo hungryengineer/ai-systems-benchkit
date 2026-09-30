@@ -335,7 +335,7 @@ void print_usage()
 {
     std::cout << "Usage: benchkit <command> [arguments]\n";
     std::cout << "\nCommands:\n";
-    std::cout << "  run [all|vector-add|rmsnorm|softmax|softmax-vectorized|matmul]\n";
+    std::cout << "  run [all|vector-add|rmsnorm|softmax|softmax-vectorized|softmax-rmsnorm-fused|softmax-rmsnorm-unfused|matmul]\n";
     std::cout << "    Run benchmarks. Defaults to 'all'.\n";
     std::cout << "  compare\n";
     std::cout << "    Compare benchmark results.\n";
@@ -517,6 +517,56 @@ if (command == "run")
               << "\n";
     }
 
+    if (want("softmax-rmsnorm-fused"))
+    {
+    std::cout << "\nCUDA Softmax+RMSNorm Fused Benchmark\n";
+    std::cout << "-------------------------------------\n";
+
+    benchkit::BenchmarkResult fused_result =
+        benchkit::run_cuda_softmax_rmsnorm_fused(environment);
+
+    print_result_json(fused_result);
+
+    std::string fused_output_path =
+        "results/raw/cuda_softmax_rmsnorm_fused_" +
+        make_timestamp() +
+        ".json";
+
+    write_result_json(
+        fused_result,
+        fused_output_path
+    );
+
+    std::cout << "Fused result: "
+              << fused_output_path
+              << "\n";
+    }
+
+    if (want("softmax-rmsnorm-unfused"))
+    {
+    std::cout << "\nCUDA Softmax+RMSNorm Unfused Benchmark\n";
+    std::cout << "---------------------------------------\n";
+
+    benchkit::BenchmarkResult unfused_result =
+        benchkit::run_cuda_softmax_rmsnorm_unfused(environment);
+
+    print_result_json(unfused_result);
+
+    std::string unfused_output_path =
+        "results/raw/cuda_softmax_rmsnorm_unfused_" +
+        make_timestamp() +
+        ".json";
+
+    write_result_json(
+        unfused_result,
+        unfused_output_path
+    );
+
+    std::cout << "Unfused result: "
+              << unfused_output_path
+              << "\n";
+    }
+
     if (want("matmul"))
     {
     std::cout << "\nCUDA MatMul Benchmark\n";
@@ -572,13 +622,15 @@ if (command == "run")
         && target != "rmsnorm"
         && target != "softmax"
         && target != "softmax-vectorized"
+        && target != "softmax-rmsnorm-fused"
+        && target != "softmax-rmsnorm-unfused"
         && target != "matmul")
     {
         std::cerr << "Unknown benchmark: \""
                   << target
                   << "\"\n";
         std::cerr << "Usage: benchkit run "
-                     "[all|vector-add|rmsnorm|softmax|softmax-vectorized|matmul]\n";
+                     "[all|vector-add|rmsnorm|softmax|softmax-vectorized|softmax-rmsnorm-fused|softmax-rmsnorm-unfused|matmul]\n";
         return 1;
     }
 }

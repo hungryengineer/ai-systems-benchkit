@@ -32,6 +32,7 @@ add_executable(
     src/statistics.cpp
     src/cuda_softmax.cu
     src/cuda_softmax_vectorized.cu
+    src/cuda_softmax_rmsnorm.cu
 )
 
 target_include_directories(benchkit
@@ -96,6 +97,31 @@ target_compile_options(benchkit_softmax_vectorized_test
 add_test(
     NAME softmax_vectorized_test
     COMMAND benchkit_softmax_vectorized_test
+)
+
+add_executable(benchkit_softmax_rmsnorm_test
+    tests/test_softmax_rmsnorm.cu
+    src/cuda_softmax_rmsnorm.cu
+    src/cuda_softmax_vectorized.cu
+    src/cuda_rmsnorm.cu
+    src/statistics.cpp
+)
+
+target_include_directories(benchkit_softmax_rmsnorm_test
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+target_compile_options(benchkit_softmax_rmsnorm_test
+    PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+)
+
+add_test(
+    NAME softmax_rmsnorm_test
+    COMMAND benchkit_softmax_rmsnorm_test
 )
 
 target_link_libraries(benchkit PRIVATE cublas)
