@@ -10,6 +10,9 @@ The project currently ships four benchmarks:
 | ------------------ | ------------------------------------------------------------ |
 | `cpu_vector_add`   | CPU memory-bandwidth bound element-wise add                  |
 | `cuda_vector_add`  | GPU element-wise add: kernel, H2D, D2H and end-to-end        |
+| `cuda_rmsnorm`     | GPU RMSNorm over 512 x 4096 rows                              |
+| `cuda_softmax`     | GPU softmax baseline: one block per row, scalar accesses     |
+| `cuda_softmax_vectorized` | Same softmax with `float4` access and warp-shuffle reductions |
 | `cuda_matmul`      | 1024x1024x1024 SGEMM: naive, shared-memory tiled, and cuBLAS |
 
 ---
@@ -225,6 +228,80 @@ can be compared directly.
 
 ---
 
+## Day 3: CUDA Softmax optimization experiment
+
+Day 3 is conceptually complete. It is the worked example of the whole
+experiment loop the project is built around:
+
+```
+Correct → measure → identify bottleneck → change one thing → profile → keep/reject
+```
+
+Softmax was chosen because it is a row-reduction kernel with a well-known set
+of possible optimizations. The workload under test is kept fixed across every
+version — 512 rows x 4096 floats, 256 threads/block, one block per row — so
+each step changes exactly one thing. Every change must first pass the
+correctness gate (see `tests/test_softmax_vectorized.cu`, sizes 4/8/16/32/4096)
+before it is measured.
+
+### V1 — baseline (kept untouched)
+
+`softmax_kernel` in `src/cuda_softmax.cu`. Scalar row pass with a
+shared-memory tree reduction. Initial block size was raised 128 -> 256.
+
+- **Change:** none (this is the reference).
+- **Result:** 256 threads/block improved device utilization and latency over
+  128; occupancy is limited by launching only a few blocks per row count.
+
+### V2 — memory optimization (kept)
+
+`softmax_kernel_vectorized` in `src/cuda_softmax_vectorized.cu`. The algorithm
+is byte-for-byte identical; only the memory-access granularity changes:
+scalar `float` loads/stores -> `float4` (4 chunks/thread at hidden=4096).
+
+- **Condition:** `hidden % 4 == 0` (no scalar tail path yet).
+- **Profiler result:** substantially higher utilization. Achieved occupancy
+  jumped ~52% -> ~90%, DRAM throughput ~16% -> ~36%, memory throughput
+  ~17% -> ~42% on the RTX 5050 (see `docs/nsight-profiling/`).
+
+### V3 — reduction optimization (kept, but no clear win)
+
+Replaced the shared-memory tree reduction in the vectorized kernel with a
+warp-shuffle reduction:
+
+```
+shared-memory tree reduction  →  warp_shuffle_down + block reduce
+```
+
+- **Change:** only the two reductions; float4 loads/stores, block size, and
+  workload are identical.
+- **What improved:** shared-memory footprint and cross-warp synchronization
+  (`__syncthreads` per log step -> one per reduction). The correctness gate
+  caught the classic shuffling bug on the way — `warp_reduce_*` leaves the
+  total only in lane 0, so the final value must be broadcast through shared
+  memory (the `total`/`total_max` pattern in `block_reduce_sum`/`_max`).
+- **Profiler result:** the Nsight profiler did **not** establish a clear
+  additional application-level win over V2. That is a useful negative result:
+  the reduction was not the bottleneck, so the speedup is swallowed by memory
+  traffic. This is intentionally kept as a documented optimization that did
+  not clearly improve the result.
+
+### Remaining (Week 2)
+
+Day 4 is the remaining Week-2 requirement: **fusion**. One fused operation
+(softmax + RMSNorm, or RMSNorm + quantize) plus a comparison of:
+
+- launch count,
+- memory traffic,
+- latency,
+- numerical error.
+
+That is the direct continuation of the V1/V2/V3 loop — merge passes that touch
+the same data, measure whether the reduced traffic actually shows up, and keep
+or reject on the numbers.
+
+---
+
 ## Hardware conditions
 
 All timings are sensitive to the machine, driver, clocks, and thermal state.
@@ -297,13 +374,19 @@ src/
   main.cpp                  CLI (run / compare), JSON printing & writing
   cpu_benchmarks.cpp
   cuda_vector_add.cu
+  cuda_rmsnorm.cu
+  cuda_softmax.cu           Baseline softmax kernel (V1)
+  cuda_softmax_vectorized.cu  float4 + warp-shuffle variant (V2/V3)
   cuda_matmul.cu
   environment.cpp           System/GPU info collection
   json.cpp                  Result loading
   statistics.cpp            Reusable statistics module
 tests/test_result.cpp       Smoke test
+tests/test_softmax_vectorized.cu  Correctness gate for the V2/V3 kernel
+docs/nsight-profiling/      Nsight Systems / Compute integration docs
 schemas/                    JSON schema for result files
 results/raw/                Generated results (git-ignored)
+profiles/                   Profiler artifacts (git-ignored)
 ```
 
 ## Regenerating results

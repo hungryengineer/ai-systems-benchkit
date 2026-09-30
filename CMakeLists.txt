@@ -78,6 +78,7 @@ add_test(
 add_executable(benchkit_softmax_vectorized_test
     tests/test_softmax_vectorized.cu
     src/cuda_softmax_vectorized.cu
+    src/statistics.cpp
 )
 
 target_include_directories(benchkit_softmax_vectorized_test

@@ -11,6 +11,101 @@ namespace benchkit {
 
 constexpr int SOFTMAX_VECTOR_BLOCK_SIZE = 256;
 
+__device__ float warp_reduce_sum(float value)
+{
+    for (int offset = 16; offset > 0; offset /= 2) {
+        value += __shfl_down_sync(
+            0xffffffff,
+            value,
+            offset
+        );
+    }
+
+    return value;
+}
+
+__device__ float warp_reduce_max(float value)
+{
+    for (int offset = 16; offset > 0; offset /= 2) {
+        value = fmaxf(
+            value,
+            __shfl_down_sync(
+                0xffffffff,
+                value,
+                offset
+            )
+        );
+    }
+
+    return value;
+}
+
+__device__ float block_reduce_sum(float value)
+{
+    __shared__ float warp_sums[8];
+    __shared__ float total;
+
+    int lane = threadIdx.x % 32;
+    int warp = threadIdx.x / 32;
+
+    value = warp_reduce_sum(value);
+
+    if (lane == 0) {
+        warp_sums[warp] = value;
+    }
+
+    __syncthreads();
+
+    value = (threadIdx.x < 8)
+        ? warp_sums[lane]
+        : 0.0f;
+
+    if (warp == 0) {
+        value = warp_reduce_sum(value);
+    }
+
+    if (threadIdx.x == 0) {
+        total = value;
+    }
+
+    __syncthreads();
+
+    return total;
+}
+
+__device__ float block_reduce_max(float value)
+{
+    __shared__ float warp_max[8];
+    __shared__ float total_max;
+
+    int lane = threadIdx.x % 32;
+    int warp = threadIdx.x / 32;
+
+    value = warp_reduce_max(value);
+
+    if (lane == 0) {
+        warp_max[warp] = value;
+    }
+
+    __syncthreads();
+
+    value = (threadIdx.x < 8)
+        ? warp_max[lane]
+        : -INFINITY;
+
+    if (warp == 0) {
+        value = warp_reduce_max(value);
+    }
+
+    if (threadIdx.x == 0) {
+        total_max = value;
+    }
+
+    __syncthreads();
+
+    return total_max;
+}
+
 __global__ void softmax_kernel_vectorized(
     const float* input,
     float* output,
@@ -18,8 +113,6 @@ __global__ void softmax_kernel_vectorized(
 {
     int row = blockIdx.x;
     int tid = threadIdx.x;
-
-    __shared__ float shared[SOFTMAX_VECTOR_BLOCK_SIZE];
 
     const float4* input4 =
         reinterpret_cast<const float4*>(input + row * hidden);
@@ -43,21 +136,7 @@ __global__ void softmax_kernel_vectorized(
         local_max = fmaxf(local_max, x.w);
     }
 
-    shared[tid] = local_max;
-    __syncthreads();
-
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-        if (tid < stride) {
-            shared[tid] = fmaxf(
-                shared[tid],
-                shared[tid + stride]
-            );
-        }
-
-        __syncthreads();
-    }
-
-    float max_val = shared[0];
+    float max_val = block_reduce_max(local_max);
 
     // ------------------------------------------------------------
     // 2. Vectorized exp + store + sum
@@ -77,21 +156,7 @@ __global__ void softmax_kernel_vectorized(
         local_sum += e0 + e1 + e2 + e3;
     }
 
-    shared[tid] = local_sum;
-    __syncthreads();
-
-    // ------------------------------------------------------------
-    // 3. Reduce sum
-    // ------------------------------------------------------------
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-        if (tid < stride) {
-            shared[tid] += shared[tid + stride];
-        }
-
-        __syncthreads();
-    }
-
-    float sum = shared[0];
+    float sum = block_reduce_sum(local_sum);
 
     // ------------------------------------------------------------
     // 4. Vectorized final normalization (read-back from output)
