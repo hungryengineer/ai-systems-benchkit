@@ -33,6 +33,7 @@ add_executable(
     src/cuda_softmax.cu
     src/cuda_softmax_vectorized.cu
     src/cuda_softmax_rmsnorm.cu
+    src/cuda_graph_benchmark.cu
 )
 
 target_include_directories(benchkit

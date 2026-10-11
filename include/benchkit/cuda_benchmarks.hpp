@@ -29,4 +29,12 @@ BenchmarkResult run_cuda_softmax_rmsnorm_unfused(
     const EnvironmentInfo& environment
 );
 
+BenchmarkResult run_cuda_graph_normal(
+    const EnvironmentInfo& environment
+);
+
+BenchmarkResult run_cuda_graph_captured(
+    const EnvironmentInfo& environment
+);
+
 }

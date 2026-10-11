@@ -335,7 +335,7 @@ void print_usage()
 {
     std::cout << "Usage: benchkit <command> [arguments]\n";
     std::cout << "\nCommands:\n";
-    std::cout << "  run [all|vector-add|rmsnorm|softmax|softmax-vectorized|softmax-rmsnorm-fused|softmax-rmsnorm-unfused|matmul]\n";
+    std::cout << "  run [all|vector-add|rmsnorm|softmax|softmax-vectorized|softmax-rmsnorm-fused|softmax-rmsnorm-unfused|cuda-graph-normal|cuda-graph-captured|matmul]\n";
     std::cout << "    Run benchmarks. Defaults to 'all'.\n";
     std::cout << "  compare\n";
     std::cout << "    Compare benchmark results.\n";
@@ -567,6 +567,56 @@ if (command == "run")
               << "\n";
     }
 
+    if (want("cuda-graph-normal"))
+    {
+    std::cout << "\nCUDA Graph Normal Baseline Benchmark\n";
+    std::cout << "------------------------------------\n";
+
+    benchkit::BenchmarkResult graph_result =
+        benchkit::run_cuda_graph_normal(environment);
+
+    print_result_json(graph_result);
+
+    std::string graph_output_path =
+        "results/raw/cuda_graph_normal_" +
+        make_timestamp() +
+        ".json";
+
+    write_result_json(
+        graph_result,
+        graph_output_path
+    );
+
+    std::cout << "CUDA graph normal result: "
+              << graph_output_path
+              << "\n";
+    }
+
+    if (want("cuda-graph-captured"))
+    {
+    std::cout << "\nCUDA Graph Captured Benchmark\n";
+    std::cout << "-----------------------------\n";
+
+    benchkit::BenchmarkResult graph_result =
+        benchkit::run_cuda_graph_captured(environment);
+
+    print_result_json(graph_result);
+
+    std::string graph_output_path =
+        "results/raw/cuda_graph_captured_" +
+        make_timestamp() +
+        ".json";
+
+    write_result_json(
+        graph_result,
+        graph_output_path
+    );
+
+    std::cout << "CUDA graph captured result: "
+              << graph_output_path
+              << "\n";
+    }
+
     if (want("matmul"))
     {
     std::cout << "\nCUDA MatMul Benchmark\n";
@@ -624,13 +674,15 @@ if (command == "run")
         && target != "softmax-vectorized"
         && target != "softmax-rmsnorm-fused"
         && target != "softmax-rmsnorm-unfused"
+        && target != "cuda-graph-normal"
+        && target != "cuda-graph-captured"
         && target != "matmul")
     {
         std::cerr << "Unknown benchmark: \""
                   << target
                   << "\"\n";
         std::cerr << "Usage: benchkit run "
-                     "[all|vector-add|rmsnorm|softmax|softmax-vectorized|softmax-rmsnorm-fused|softmax-rmsnorm-unfused|matmul]\n";
+                     "[all|vector-add|rmsnorm|softmax|softmax-vectorized|softmax-rmsnorm-fused|softmax-rmsnorm-unfused|cuda-graph-normal|cuda-graph-captured|matmul]\n";
         return 1;
     }
 }
