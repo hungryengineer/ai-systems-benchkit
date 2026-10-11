@@ -16,7 +16,7 @@ The project currently ships four benchmarks:
 | `cuda_softmax_rmsnorm_fused` | Day-4 fusion: softmax + RMSNorm in one kernel (`softmax_rmsnorm_kernel`) |
 | `cuda_softmax_rmsnorm_unfused` | Same result via 2 launches: V2 softmax then scalar RMSNorm |
 | `cuda_graph_normal` | CUDA Graphs baseline: 1000 host-driven launches of `tiny_kernel` |
-| `cuda_graph_captured` | Same 1000-launch batch captured as a graph, setup timed separately |
+| `cuda_graph_captured` | One-node `tiny_kernel` graph replayed 1000x per sample, setup timed separately |
 | `cuda_matmul`      | 1024x1024x1024 SGEMM: naive, shared-memory tiled, and cuBLAS |
 
 ---
@@ -382,28 +382,30 @@ floats, `+1.0f` per launch) — so they are directly comparable:
 
 Both paths report the workload equivalence explicitly:
 `kernel_executions_per_sample = 1000` and `total_kernel_executions = 20010`
-(10 warmup + 20 samples x 1000) — identical for normal and graph paths. The
-correctness gate holds for both (`x[i] == i + total_kernel_executions`, exact
-in `float`).
+(10 warmup + 20 samples x 1000) — identical for normal and graph paths. They
+also share the identical timing structure — a `steady_clock` window around
+`{1000 dispatches + device sync}`, 10 warmup executions, and CUDA error checks
+at the same points — so each raw sample covers the same timing scope in both
+paths. The correctness gate holds for both (`x[i] == i + total_kernel_executions`,
+exact in `float`).
 
-Representative numbers (RTX 5050, same session):
+Representative numbers from a single paired session (RTX 5050):
 
-| Metric | Normal (1000 launches) | Graph (1000 replays of 1-node graph) |
-| ------ | ---------------------- | ------------------------------------ |
+| Metric | Normal (1000 launches) | Graph (1-node, 1000 replays) |
+| ------ | ---------------------- | ---------------------------- |
 | Median sample time | 1.75 ms | 2.05 ms |
 | Per kernel / per replay | 1.75 us | 2.05 us |
 | One-time setup | — | 0.56 ms (`setup_ms`) |
 | Total (20 samples + setup) | 35.0 ms | 41.6 ms |
 
-The corrected design shows the honest result: **for a single-node graph
-replayed N times there is no speedup** — replay is ~17% *slower* per launch
-than the normal path, and setup adds 0.56 ms on top. That is the point of
-Day 5: a 1-node graph still costs one `cudaGraphLaunch` per execution, so it
-does **not** remove the per-launch host overhead. The earlier (incorrect)
-design captured the whole 1000-launch sequence as 1000 nodes, which showed a
-~2.8x win — but that compared 1000-launch *batches*, not equivalent
-per-execution workloads, so it measured graph *batching*, not launch
-overhead.
+The honest conclusion: **for a single-node graph replayed N times there is no
+speedup.** The value of CUDA Graphs is replacing *many* host-side launch
+submissions with a single `cudaGraphLaunch`, but a 1-node graph still costs one
+`cudaGraphLaunch` per execution, so it does **not** remove the per-launch host
+overhead — replay lands slightly *slower* per execution than the plain launch
+path, and the 0.56 ms setup is paid on top. Graphs pay off when a graph holds
+many nodes so one replay submits the whole workload, not when it is used as a
+1-to-1 substitute for a single kernel launch.
 
 Why not capture on the default stream: this driver returns
 `cudaErrorStreamCaptureUnsupported` for `cudaStreamBeginCapture` on the legacy
@@ -489,7 +491,7 @@ src/
   cuda_softmax.cu           Baseline softmax kernel (V1)
   cuda_softmax_vectorized.cu  float4 + warp-shuffle variant (V2/V3, V4 register cache)
   cuda_softmax_rmsnorm.cu   Day-4 fused softmax+RMSNorm and unfused baseline
-  cuda_graph_benchmark.cu   Day-5 CUDA Graphs: normal vs captured 1000-launch batch
+  cuda_graph_benchmark.cu   Day-5 CUDA Graphs: 1-node graph replayed 1000x vs 1000 normal launches
   cuda_matmul.cu
   environment.cpp           System/GPU info collection
   json.cpp                  Result loading
