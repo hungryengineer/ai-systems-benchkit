@@ -108,6 +108,19 @@ float run_case(int rows, int hidden)
             std::fabs(h_output[i] - h_reference[i])
         );
     }
+    
+    if (rows == 3 && hidden == 4096) {
+    std::FILE* file = std::fopen("/tmp/benchkit_softmax_cuda.txt", "w");
+
+    if (file == nullptr) {
+        std::perror("Failed to open CUDA output file");
+    } else {
+        for (float value : h_output) {
+            std::fprintf(file, "%.9g\n", value);
+        }
+        std::fclose(file);
+    }
+}
 
     cudaFree(d_input);
     cudaFree(d_output);
