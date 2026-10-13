@@ -64,7 +64,7 @@ float run_case(int rows, int hidden)
     // Deterministic input spanning positive and negative values.
     for (size_t i = 0; i < element_count; ++i) {
         h_input[i] =
-            static_cast<float>((i % 100) - 50) / 10.0f;
+            static_cast<float>(static_cast<int>(i % 100) - 50) / 10.0f;
     }
 
     softmax_cpu(h_input, h_reference, rows, hidden);
@@ -108,7 +108,7 @@ float run_case(int rows, int hidden)
             std::fabs(h_output[i] - h_reference[i])
         );
     }
-    
+
     if (rows == 3 && hidden == 4096) {
     std::FILE* file = std::fopen("/tmp/benchkit_softmax_cuda.txt", "w");
 

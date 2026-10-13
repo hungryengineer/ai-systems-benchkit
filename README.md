@@ -1,5 +1,80 @@
 # AI Systems BenchKit
 
+# Week 2 — CUDA Kernel Optimization Laboratory
+
+## Objective
+
+Implement, validate, optimize, and profile CUDA kernels for Softmax, RMSNorm, and fused operations. Compare custom implementations with framework baselines and evaluate CUDA Graph execution.
+
+## Hardware and software
+
+- GPU: NVIDIA GeForce RTX 5050 Laptop GPU, 8 GB
+- CPU: AMD Ryzen AI 7 350
+- OS: Pop!_OS 24.04 LTS
+- NVIDIA driver: 595.84
+- System CUDA Toolkit: 12.0
+- GCC: 13.3
+- CMake: 3.28.3
+- PyTorch: 2.14.1+cu130
+
+## Key findings
+
+### Softmax optimization
+
+Vectorized float4 loads and stores improved measured latency over the earlier scalar implementation. Warp-shuffle reductions did not show a clear additional application-level improvement. Register-cached exponentials increased register usage without a consistent latency benefit.
+
+**Decision:** retain the vectorized implementation; do not adopt register caching as the default optimization.
+
+### Softmax + RMSNorm fusion
+
+The cited profiler run measured approximately 190.2 µs for the unfused path and 63.8 µs for the fused path. Fusion reduced two kernel launches to one and eliminated an intermediate global-memory round trip.
+
+**Decision:** retain the fused implementation for the tested workload.
+
+### CUDA Graphs
+
+The comparison used equivalent workloads: 1,000 executions per sample, 20 measured samples, and 10 warm-up executions. The graph contained one kernel node and was replayed 1,000 times per sample.
+
+A representative paired session measured approximately 1.75 ms for normal launches and 2.05 ms for graph replay, excluding the graph's one-time setup cost of approximately 0.56 ms.
+
+**Decision:** the tested one-node graph design did not demonstrate a speedup. This does not establish that CUDA Graphs are generally slower; graphs containing multiple operations may have different submission-overhead characteristics.
+
+### PyTorch comparison
+
+For a 512 × 4096 FP32 Softmax workload, the observed median latencies were:
+
+- Custom vectorized CUDA: 30.592 µs
+- PyTorch eager: 52.096 µs
+- PyTorch compiled: 36.544 µs
+
+The eager and compiled measurements were collected in an alternating paired run. The custom CUDA result came from a separate run, so the three-way ranking remains preliminary.
+
+The eager and compiled outputs agreed within approximately 4.657 × 10⁻¹⁰ maximum absolute error. The first compiled invocation took approximately 3.336 seconds, including compilation and initialization.
+
+### Matrix multiplication and transfers
+
+The recorded benchmark results showed cuBLAS outperforming the custom tiled and naive matrix-multiplication implementations. The tiled implementation improved on the naive implementation. The vector-add experiment showed that host-device transfers can materially affect end-to-end latency.
+
+## Measurement and correctness
+
+Correctness checks passed for the tested Softmax shapes and the fused/unfused Softmax + RMSNorm paths. Measurements remain sensitive to laptop GPU clocks, thermal state, background load, and timing methodology.
+
+CUDA-event timings, host-observed timings, and profiler timings must not be treated as interchangeable without accounting for their different measurement scopes.
+
+## Limitations
+
+- PyTorch/vendor-library comparisons are not a complete, controlled three-way performance study.
+- The PyTorch compiled benchmark's mean latency was higher than its median, indicating variability.
+- Some profiler utilization figures do not independently establish a compute-bound or memory-bound classification.
+- The one-node CUDA Graph result is specific to the tested workload and implementation.
+
+## Conclusion
+
+Week 2 demonstrated the value of correctness gates, vectorized memory access, kernel fusion, profiling, and disciplined benchmarking. It also showed that plausible optimizations—such as register caching or one-node graph replay—must be evaluated empirically.
+
+The next stage should build on these measurements while preserving workload equivalence, numerical validation, and reproducible timing.
+
+
 A small, reproducible C++20 / CUDA benchmarking framework for AI infrastructure.
 It measures CPU and GPU kernels with the same methodology, writes machine-readable
 JSON results, and can compare two runs to detect regressions.
